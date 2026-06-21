@@ -8,6 +8,8 @@ Each phase builds on the previous one. Do not move to the next phase until the c
 
 ## Phase 0: Single-Backend Proxy
 
+**Status:** ✅ Complete. See [`docs/current-status.md`](current-status.md) for the latest code state.
+
 **Goal:** Forward one request to one backend and return the response.
 
 **What to build:**
