@@ -1,144 +1,138 @@
 #include <arpa/inet.h>
+#include <errno.h>
 #include <netinet/in.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
 #include <unistd.h>
-#include <string.h>
+#include "backend.h"
+#include "config.h"
+#include "proxy.h"
 
-struct backend {
-  const char *ip;
-  int port;
-  int alive;
-};
+static volatile sig_atomic_t running = 1;
 
-struct backend_pool {
-  struct backend *backends;
-  int count;
-  int next_index;
-};
-
-int connect_backend(struct backend *option) {
-  int backend_fd = socket(AF_INET, SOCK_STREAM, 0);
-  if (backend_fd == -1) {
-    perror("error creating socket for backend");
-    return -1;
-  }
-  struct sockaddr_in backend_address;
-  backend_address.sin_family = AF_INET;
-  backend_address.sin_port = htons(option->port);
-  if (inet_pton(AF_INET, option->ip, &backend_address.sin_addr) <= 0) {
-    perror("error setting the hostname for backend");
-    close(backend_fd);
-    return -1;
-  }
-  if (connect(backend_fd, (struct sockaddr *)&backend_address,
-              sizeof(backend_address)) == -1) {
-    perror("error connecting to backend server");
-    close(backend_fd);
-    return -1;
-  }
-  return backend_fd;
-};
-
-int select_backend(struct backend_pool *backend_list,
-                   struct backend **chosen_backend) {
-  int loop = 0;
-  int backend_fd = -1;
-  while (loop < backend_list->count) {
-    int i = backend_list->next_index;
-    struct backend *target_backend = backend_list->backends + i;
-    printf("target backend ip %s and port %d\n", target_backend->ip, target_backend->port);
-    backend_fd = connect_backend(target_backend);
-    if (backend_list->next_index + 1 == backend_list->count) {
-      backend_list->next_index = 0;
-    } else {
-      backend_list->next_index += 1;
-    }
-    if (backend_fd != -1) {
-      *chosen_backend = target_backend;
-      target_backend->alive = 1;
-      break;
-    }
-    target_backend->alive = 0;
-    loop += 1;
-  }
-
-  return backend_fd;
+static void signal_handler(int sig) {
+  (void)sig;
+  running = 0;
 }
 
-int main() {
+static int setup_signals(void) {
+  struct sigaction sa;
+  memset(&sa, 0, sizeof(sa));
+  sa.sa_handler = signal_handler;
+  sigemptyset(&sa.sa_mask);
+  sa.sa_flags = 0; /* do not set SA_RESTART so accept() returns EINTR */
+
+  if (sigaction(SIGINT, &sa, NULL) == -1) {
+    return -1;
+  }
+  if (sigaction(SIGTERM, &sa, NULL) == -1) {
+    return -1;
+  }
+  return 0;
+}
+
+int main(int argc, char *argv[]) {
+  if (argc != 2) {
+    fprintf(stderr, "usage: %s <config.json>\n", argv[0]);
+    return EXIT_FAILURE;
+  }
+
+  config_t cfg;
+  if (config_load(argv[1], &cfg) == -1) {
+    return EXIT_FAILURE;
+  }
+
+  if (setup_signals() == -1) {
+    perror("failed to set up signal handlers");
+    config_free(&cfg);
+    return EXIT_FAILURE;
+  }
+
   int socket_fd = socket(AF_INET, SOCK_STREAM, 0);
   if (socket_fd == -1) {
     perror("error creating socket connection");
-    return EXIT_FAILURE;
-  }
-  struct backend backends[] = {
-    {"127.0.0.1", 9001, 1},
-    {"127.0.0.1", 9002, 1},
-    {"127.0.0.1", 9003, 1}
-  };
-  struct backend_pool backend_list = {
-    .backends = backends,
-    .count = 3,
-    .next_index = 0
-  };
-  int opt = 1;
-  setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-  struct sockaddr_in address;
-  address.sin_family = AF_INET;
-  address.sin_addr.s_addr = INADDR_ANY;
-  address.sin_port = htons(8080);
-  int bnd = bind(socket_fd, (struct sockaddr *)&address, sizeof(address));
-  if (bnd == -1) {
-    perror("error binding socket to address");
-    return EXIT_FAILURE;
-  }
-  int lstn = listen(socket_fd, SOMAXCONN);
-  if (lstn == -1) {
-    perror("error listening on socket");
+    config_free(&cfg);
     return EXIT_FAILURE;
   }
 
-  while (1) {
+  int opt = 1;
+  setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
+  struct sockaddr_in address;
+  address.sin_family = AF_INET;
+  address.sin_port = htons(cfg.listen_port);
+
+  if (strcmp(cfg.listen_host, "0.0.0.0") == 0) {
+    address.sin_addr.s_addr = INADDR_ANY;
+  } else {
+    if (inet_pton(AF_INET, cfg.listen_host, &address.sin_addr) <= 0) {
+      fprintf(stderr, "invalid listen_host: %s\n", cfg.listen_host);
+      close(socket_fd);
+      config_free(&cfg);
+      return EXIT_FAILURE;
+    }
+  }
+
+  int bnd = bind(socket_fd, (struct sockaddr *)&address, sizeof(address));
+  if (bnd == -1) {
+    perror("error binding socket to address");
+    close(socket_fd);
+    config_free(&cfg);
+    return EXIT_FAILURE;
+  }
+
+  int lstn = listen(socket_fd, SOMAXCONN);
+  if (lstn == -1) {
+    perror("error listening on socket");
+    close(socket_fd);
+    config_free(&cfg);
+    return EXIT_FAILURE;
+  }
+
+  printf("proxy listening on %s:%d\n", cfg.listen_host, cfg.listen_port);
+
+  while (running) {
     int client_fd = accept(socket_fd, NULL, NULL);
     if (client_fd == -1) {
+      if (errno == EINTR && !running) {
+        break;
+      }
       perror("error accepting request on socket");
       continue;
     }
+
     char buffer[4096];
     int file_read = read(client_fd, buffer, 4096);
     if (file_read == -1) {
       perror("error reading the request");
       goto cleanup;
     }
-    struct backend* chosen_backend;
-    int backend_fd = select_backend(&backend_list, &chosen_backend);
+
+    struct backend *chosen_backend;
+    int backend_fd = select_backend(&cfg.backends, &chosen_backend);
     if (backend_fd == -1) {
       perror("getting valid backend");
-      const char* bad_gateway = "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
-      write(client_fd, bad_gateway, strlen(bad_gateway));
+      proxy_send_bad_gateway(client_fd);
       goto cleanup;
     }
+
     printf("chose backend port %d\n", chosen_backend->port);
-    int file_write = write(backend_fd, buffer, file_read);
+    int file_write = proxy_send_request(backend_fd, buffer, file_read);
     if (file_write == -1) {
       perror("error writing the repsonse");
       goto cleanup;
     }
-    char response[4096];
-    int bytes_read;
-    while ((bytes_read = read(backend_fd, response, sizeof(response))) > 0) {
-      if (write(client_fd, response, bytes_read) == -1) {
-        perror("error writing to clinet");
-        goto cleanup;
-      }
-    }
+
+    int bytes_read = proxy_stream_response(backend_fd, client_fd);
     if (bytes_read == -1) {
       perror("error reading response from backend");
       goto cleanup;
     }
+
   cleanup:
     printf("closing backend and clinet fd %d,%d\n", backend_fd, client_fd);
     if (backend_fd != -1) {
@@ -146,4 +140,9 @@ int main() {
     }
     close(client_fd);
   }
+
+  printf("shutting down gracefully\n");
+  close(socket_fd);
+  config_free(&cfg);
+  return EXIT_SUCCESS;
 }
