@@ -8,7 +8,7 @@ Each phase builds on the previous one. Do not move to the next phase until the c
 
 ## Phase 0: Single-Backend Proxy
 
-**Status:** ✅ Complete. See [`docs/current-status.md`](current-status.md) for the latest code state.
+**Status:** ✅ Complete.
 
 **Goal:** Forward one request to one backend and return the response.
 
@@ -27,7 +27,43 @@ Each phase builds on the previous one. Do not move to the next phase until the c
 
 ---
 
-## Phase 1: HTTP/1.1 Correctness
+## Phase 1: Basic Load Balancing
+
+**Status:** ✅ Complete.
+
+**Goal:** Route traffic across multiple backends with simple round-robin.
+
+**What to build:**
+- Configurable list of backends (hardcoded is fine for this phase)
+- Round-robin selection
+- Skip unreachable backends
+- Return `502 Bad Gateway` when all backends fail
+
+**Acceptance criteria:**
+- Three backends receive traffic in round-robin order
+- Killing one backend stops traffic to it
+- Killing all backends returns `502`
+
+---
+
+## Phase 2: Config File + Signal Handling
+
+**Goal:** Make the proxy configurable without recompiling, and handle OS signals cleanly.
+
+**What to build:**
+- JSON config file with `listen` address and `backends` list
+- Parse config at startup
+- Handle `SIGINT` for clean shutdown
+- Handle `SIGTERM` for clean shutdown
+
+**Acceptance criteria:**
+- `./proxy config.json` starts with configured backends
+- `Ctrl-C` closes listening socket and exits gracefully
+- Invalid config prints a useful error and exits non-zero
+
+---
+
+## Phase 3: HTTP/1.1 Correctness
 
 **Goal:** Parse requests and preserve HTTP semantics.
 
@@ -46,24 +82,7 @@ Each phase builds on the previous one. Do not move to the next phase until the c
 
 ---
 
-## Phase 2: Load Balancing
-
-**Goal:** Route traffic across multiple backends.
-
-**What to build:**
-- Configurable list of backends
-- Round-robin selection
-- Least-connections selection
-- Track backend state (active connections, healthy flag)
-
-**Acceptance criteria:**
-- Two backends receive traffic
-- Round-robin alternates evenly
-- Least-connections favors the backend with fewer active connections
-
----
-
-## Phase 3: Connection Pooling + Keep-Alive
+## Phase 4: Connection Pooling + Keep-Alive
 
 **Goal:** Reuse upstream connections.
 
@@ -79,7 +98,22 @@ Each phase builds on the previous one. Do not move to the next phase until the c
 
 ---
 
-## Phase 4: Health Checks
+## Phase 5: Advanced Load Balancing
+
+**Goal:** Support algorithms that need per-backend state.
+
+**What to build:**
+- Least-connections selection
+- Weighted round-robin selection
+- Track active connection counts per backend
+
+**Acceptance criteria:**
+- Least-connections favors the backend with fewer active connections
+- Weighted round-robin distributes according to weights
+
+---
+
+## Phase 6: Health Checks
 
 **Goal:** Detect and remove failed backends.
 
@@ -95,7 +129,7 @@ Each phase builds on the previous one. Do not move to the next phase until the c
 
 ---
 
-## Phase 5: Event-Driven Core
+## Phase 7: Event-Driven Core
 
 **Goal:** Scale to many concurrent connections.
 
@@ -111,27 +145,39 @@ Each phase builds on the previous one. Do not move to the next phase until the c
 
 ---
 
-## Phase 6: Observability + Operations
+## Phase 8: Observability
 
-**Goal:** Make the proxy runnable and debuggable.
+**Goal:** Make the proxy debuggable and measurable.
 
 **What to build:**
 - Structured request logging
 - `/metrics` endpoint (request count, latency, backend status)
 - Request IDs
-- Config file (JSON)
-- Signal handling (SIGINT, SIGHUP)
-- Graceful config reload without dropping active connections
 
 **Acceptance criteria:**
-- Editing `config.json` and sending SIGHUP updates backends
 - Logs contain method, path, status, backend, duration
+- `/metrics` returns backend health and request counts
 
 ---
 
-## Phase 7: Stretch Goals
+## Phase 9: Operations
 
-Pick any of these after Phase 6:
+**Goal:** Make the proxy runnable in production-like environments.
+
+**What to build:**
+- Graceful config reload without dropping active connections
+- Robust signal handling (`SIGINT`, `SIGTERM`, `SIGHUP`)
+- Daemonization / systemd unit (optional)
+
+**Acceptance criteria:**
+- Editing `config.json` and sending `SIGHUP` updates backends
+- Active connections finish before old config is torn down
+
+---
+
+## Phase 10: Stretch Goals
+
+Pick any of these after Phase 9:
 
 - **TLS termination** (OpenSSL or similar)
 - **Rate limiting** (token bucket per client)
@@ -145,11 +191,12 @@ Pick any of these after Phase 6:
 ## Suggested Order of Work
 
 1. Refactor the current `src/main.c` into modules.
-2. Implement Phase 0.
-3. Write unit tests for the parser.
-4. Add load balancing.
-5. Add connection pooling.
-6. Add health checks.
+2. Add a JSON config file and signal handling.
+3. Implement HTTP/1.1 request/response parsing.
+4. Add connection pooling and keep-alive.
+5. Add least-connections and weighted round-robin.
+6. Add passive and active health checks.
 7. Migrate to event-driven I/O.
-8. Add logging, metrics, and config reload.
-9. Benchmark and document.
+8. Add logging, metrics, and request IDs.
+9. Implement graceful config reload.
+10. Benchmark and document.

@@ -1,0 +1,17 @@
+[
+  {
+    "directory": "/Users/darlingsuno/workspace/c/projects/http-server",
+    "command": "gcc -Wall -Wextra -Iinclude -c src/main.c -o src/main.o",
+    "file": "src/main.c"
+  },
+  {
+    "directory": "/Users/darlingsuno/workspace/c/projects/http-server",
+    "command": "gcc -Wall -Wextra -Iinclude -c src/backend.c -o src/backend.o",
+    "file": "src/backend.c"
+  },
+  {
+    "directory": "/Users/darlingsuno/workspace/c/projects/http-server",
+    "command": "gcc -Wall -Wextra -Iinclude -c src/proxy.c -o src/proxy.o",
+    "file": "src/proxy.c"
+  }
+]

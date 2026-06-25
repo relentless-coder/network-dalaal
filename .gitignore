@@ -56,3 +56,5 @@ dkms.conf
 
 # output
 server
+build/
+.cache/

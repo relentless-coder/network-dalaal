@@ -6,67 +6,10 @@
 #include <sys/uio.h>
 #include <unistd.h>
 #include <string.h>
+#include "backend.h"
+#include "proxy.h"
+#include "config.h"
 
-struct backend {
-  const char *ip;
-  int port;
-  int alive;
-};
-
-struct backend_pool {
-  struct backend *backends;
-  int count;
-  int next_index;
-};
-
-int connect_backend(struct backend *option) {
-  int backend_fd = socket(AF_INET, SOCK_STREAM, 0);
-  if (backend_fd == -1) {
-    perror("error creating socket for backend");
-    return -1;
-  }
-  struct sockaddr_in backend_address;
-  backend_address.sin_family = AF_INET;
-  backend_address.sin_port = htons(option->port);
-  if (inet_pton(AF_INET, option->ip, &backend_address.sin_addr) <= 0) {
-    perror("error setting the hostname for backend");
-    close(backend_fd);
-    return -1;
-  }
-  if (connect(backend_fd, (struct sockaddr *)&backend_address,
-              sizeof(backend_address)) == -1) {
-    perror("error connecting to backend server");
-    close(backend_fd);
-    return -1;
-  }
-  return backend_fd;
-};
-
-int select_backend(struct backend_pool *backend_list,
-                   struct backend **chosen_backend) {
-  int loop = 0;
-  int backend_fd = -1;
-  while (loop < backend_list->count) {
-    int i = backend_list->next_index;
-    struct backend *target_backend = backend_list->backends + i;
-    printf("target backend ip %s and port %d\n", target_backend->ip, target_backend->port);
-    backend_fd = connect_backend(target_backend);
-    if (backend_list->next_index + 1 == backend_list->count) {
-      backend_list->next_index = 0;
-    } else {
-      backend_list->next_index += 1;
-    }
-    if (backend_fd != -1) {
-      *chosen_backend = target_backend;
-      target_backend->alive = 1;
-      break;
-    }
-    target_backend->alive = 0;
-    loop += 1;
-  }
-
-  return backend_fd;
-}
 
 int main() {
   int socket_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -74,22 +17,17 @@ int main() {
     perror("error creating socket connection");
     return EXIT_FAILURE;
   }
-  struct backend backends[] = {
-    {"127.0.0.1", 9001, 1},
-    {"127.0.0.1", 9002, 1},
-    {"127.0.0.1", 9003, 1}
-  };
-  struct backend_pool backend_list = {
-    .backends = backends,
-    .count = 3,
-    .next_index = 0
-  };
   int opt = 1;
+  config_t cfg = {0};
+  if (config_load("config.json", &cfg) != 0) {
+    fprintf(stderr, "error loading the config");
+    return EXIT_FAILURE;
+  }
   setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
   struct sockaddr_in address;
   address.sin_family = AF_INET;
-  address.sin_addr.s_addr = INADDR_ANY;
-  address.sin_port = htons(8080);
+  address.sin_addr.s_addr = inet_addr(cfg.listen_host);
+  address.sin_port = htons(cfg.listen_port);
   int bnd = bind(socket_fd, (struct sockaddr *)&address, sizeof(address));
   if (bnd == -1) {
     perror("error binding socket to address");
@@ -114,7 +52,7 @@ int main() {
       goto cleanup;
     }
     struct backend* chosen_backend;
-    int backend_fd = select_backend(&backend_list, &chosen_backend);
+    int backend_fd = select_backend(&cfg.backends, &chosen_backend);
     if (backend_fd == -1) {
       perror("getting valid backend");
       const char* bad_gateway = "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";

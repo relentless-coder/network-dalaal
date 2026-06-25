@@ -87,15 +87,17 @@ See [`docs/06-roadmap.md`](docs/06-roadmap.md) for the full phased plan.
 
 High-level milestones:
 
-1. **MVP proxy** — forward a request to one backend and return the response
-2. **HTTP/1.1 correctness** — keep-alive, chunked encoding, Content-Length, headers
-3. **Load balancing** — round-robin, least-connections, weighted round-robin
-4. **Connection pooling** — reuse upstream connections, idle timeouts
-5. **Health checks** — passive failure detection + active probes
-6. **Event-driven core** — replace blocking model with `epoll`/`kqueue`/`io_uring`
-7. **Observability** — request logs, metrics endpoint, request IDs
-8. **Operations** — config file, graceful reload, signal handling
-9. **Stretch goals** — TLS termination, rate limiting, caching
+1. **MVP proxy** — forward a request to one backend and return the response ✅
+2. **Basic load balancing** — round-robin across multiple backends ✅
+3. **Config + signals** — config file, SIGINT/SIGHUP handling
+4. **HTTP/1.1 correctness** — keep-alive, chunked encoding, Content-Length, headers
+5. **Connection pooling** — reuse upstream connections, idle timeouts
+6. **Advanced load balancing** — least-connections, weighted round-robin
+7. **Health checks** — passive failure detection + active probes
+8. **Event-driven core** — replace blocking model with `epoll`/`kqueue`/`io_uring`
+9. **Observability** — request logs, metrics endpoint, request IDs
+10. **Operations** — graceful config reload, robust signal handling
+11. **Stretch goals** — TLS termination, rate limiting, caching
 
 ## Why this project
 
