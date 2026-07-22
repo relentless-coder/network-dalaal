@@ -131,21 +131,45 @@ Each phase builds on the previous one. Do not move to the next phase until the c
 
 ## Phase 7: Event-Driven Core
 
-**Goal:** Scale to many concurrent connections.
+**Goal:** Scale to many concurrent connections on a single thread.
 
 **What to build:**
 - Non-blocking sockets
-- Event loop using `kqueue` on macOS and `epoll` on Linux
+- Cross-platform event loop abstraction
+  - Generic interface in `event_loop.h`
+  - `epoll` implementation for Linux
+  - `kqueue` implementation for macOS/BSD
+  - Build system selects the right backend
 - Per-connection state machine
-- Single-threaded event loop first; optional thread pool later
+- Single-threaded event loop first
 
 **Acceptance criteria:**
-- Handles 1000+ concurrent connections
+- Handles 1000+ concurrent connections on one thread
+- Same codebase compiles and runs on both Linux and macOS
 - No one-thread-per-connection overhead
 
 ---
 
-## Phase 8: Observability
+## Phase 8: Multi-Reactor Threading
+
+**Goal:** Scale across CPU cores without sharing state on the hot path.
+
+**What to build:**
+- One event loop per worker thread
+- Connection distribution across threads
+  - `SO_REUSEPORT` on Linux for kernel-level accept balancing
+  - Accept-and-handoff or per-thread listening on macOS
+- Per-thread upstream connection pools
+- Minimal shared state; avoid locks on the request path
+
+**Acceptance criteria:**
+- Proxy utilizes multiple CPU cores
+- Throughput scales with thread count under load
+- No data races on connection-handling paths
+
+---
+
+## Phase 9: Observability
 
 **Goal:** Make the proxy debuggable and measurable.
 
@@ -160,7 +184,7 @@ Each phase builds on the previous one. Do not move to the next phase until the c
 
 ---
 
-## Phase 9: Operations
+## Phase 10: Operations
 
 **Goal:** Make the proxy runnable in production-like environments.
 
@@ -175,9 +199,9 @@ Each phase builds on the previous one. Do not move to the next phase until the c
 
 ---
 
-## Phase 10: Stretch Goals
+## Phase 11: Stretch Goals
 
-Pick any of these after Phase 9:
+Pick any of these after Phase 10:
 
 - **TLS termination** (OpenSSL or similar)
 - **Rate limiting** (token bucket per client)
@@ -196,7 +220,8 @@ Pick any of these after Phase 9:
 4. Add connection pooling and keep-alive.
 5. Add least-connections and weighted round-robin.
 6. Add passive and active health checks.
-7. Migrate to event-driven I/O.
-8. Add logging, metrics, and request IDs.
-9. Implement graceful config reload.
-10. Benchmark and document.
+7. Migrate to event-driven I/O with a cross-platform `epoll`/`kqueue` abstraction.
+8. Add multi-reactor threading to scale across CPU cores.
+9. Add logging, metrics, and request IDs.
+10. Implement graceful config reload.
+11. Benchmark and document.

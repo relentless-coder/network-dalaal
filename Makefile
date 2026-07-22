@@ -11,6 +11,8 @@ SRCS = src/main.c \
        src/config.c \
        src/backend.c \
        src/proxy.c \
+			 src/buffer.c \
+			 src/http.c \
        vendor/cJSON/cJSON.c
 
 OBJS = $(patsubst %.c,$(BUILD_DIR)/%.o,$(SRCS))

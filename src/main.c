@@ -9,6 +9,7 @@
 #include "backend.h"
 #include "proxy.h"
 #include "config.h"
+#include "buffer.h"
 
 
 int main() {
@@ -40,39 +41,42 @@ int main() {
   }
 
   while (1) {
+    int backend_fd = -1;
     int client_fd = accept(socket_fd, NULL, NULL);
     if (client_fd == -1) {
       perror("error accepting request on socket");
       continue;
     }
-    char buffer[4096];
-    int file_read = read(client_fd, buffer, 4096);
+
+    buf_t req_buf = {0};
+    int buf_ready = buf_init(&req_buf, 4096);
+    if (buf_ready == -1) {
+      fprintf(stderr, "Error: initialising request buffer");
+      goto cleanup;
+    }
+    int file_read = read(client_fd, req_buf.data, 4096);
     if (file_read == -1) {
       perror("error reading the request");
       goto cleanup;
     }
+    if (file_read == 0) {
+      goto cleanup;
+    }
+    req_buf.len += file_read;
     struct backend* chosen_backend;
-    int backend_fd = select_backend(&cfg.backends, &chosen_backend);
+    backend_fd = select_backend(&cfg.backends, &chosen_backend);
     if (backend_fd == -1) {
       perror("getting valid backend");
-      const char* bad_gateway = "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
-      write(client_fd, bad_gateway, strlen(bad_gateway));
+      proxy_send_bad_gateway(client_fd);
       goto cleanup;
     }
     printf("chose backend port %d\n", chosen_backend->port);
-    int file_write = write(backend_fd, buffer, file_read);
+    int file_write = proxy_send_request(backend_fd, req_buf.data, file_read);
     if (file_write == -1) {
       perror("error writing the repsonse");
       goto cleanup;
     }
-    char response[4096];
-    int bytes_read;
-    while ((bytes_read = read(backend_fd, response, sizeof(response))) > 0) {
-      if (write(client_fd, response, bytes_read) == -1) {
-        perror("error writing to clinet");
-        goto cleanup;
-      }
-    }
+    int bytes_read = proxy_stream_response(backend_fd, client_fd);
     if (bytes_read == -1) {
       perror("error reading response from backend");
       goto cleanup;
@@ -82,6 +86,7 @@ int main() {
     if (backend_fd != -1) {
       close(backend_fd);
     }
+    buf_free(&req_buf);
     close(client_fd);
   }
 }

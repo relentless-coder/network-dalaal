@@ -94,10 +94,11 @@ High-level milestones:
 5. **Connection pooling** — reuse upstream connections, idle timeouts
 6. **Advanced load balancing** — least-connections, weighted round-robin
 7. **Health checks** — passive failure detection + active probes
-8. **Event-driven core** — replace blocking model with `epoll`/`kqueue`/`io_uring`
-9. **Observability** — request logs, metrics endpoint, request IDs
-10. **Operations** — graceful config reload, robust signal handling
-11. **Stretch goals** — TLS termination, rate limiting, caching
+8. **Event-driven core** — replace blocking model with cross-platform `epoll`/`kqueue` event loop
+9. **Multi-reactor threading** — scale across CPU cores with per-thread event loops
+10. **Observability** — request logs, metrics endpoint, request IDs
+11. **Operations** — graceful config reload, robust signal handling
+12. **Stretch goals** — TLS termination, rate limiting, caching
 
 ## Why this project
 

@@ -87,4 +87,5 @@ struct backend_pool {
 4. Add connection pooling and keep-alive (Phase 4).
 5. Add least-connections and weighted round-robin (Phase 5).
 6. Add health checks (Phase 6).
-7. Migrate to event-driven I/O (Phase 7).
+7. Migrate to event-driven I/O with a cross-platform `epoll`/`kqueue` abstraction (Phase 7).
+8. Add multi-reactor threading to scale across CPU cores (Phase 8).
