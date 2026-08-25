@@ -1,10 +1,10 @@
+#include "buffer.h"
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <errno.h>
-#include "buffer.h"
 
-int buf_init(buf_t* buf, size_t cap) {
+int buf_init(buf_t *buf, size_t cap) {
   if (buf == NULL) {
     fprintf(stderr, "ERROR: buf_init: buffer is NULL\n");
     return -1;
@@ -13,7 +13,7 @@ int buf_init(buf_t* buf, size_t cap) {
     fprintf(stderr, "Invalid value for buffer capacity\n");
     return -1;
   }
-  char* data = malloc(cap);
+  char *data = malloc(cap);
   if (data == NULL) {
     return -1;
   }
@@ -23,7 +23,7 @@ int buf_init(buf_t* buf, size_t cap) {
   return 0;
 }
 
-void buf_free(buf_t* buf) {
+void buf_free(buf_t *buf) {
   if (buf == NULL) {
     fprintf(stderr, "ERROR: buf_free: buffer is NULL\n");
     return;
@@ -34,11 +34,11 @@ void buf_free(buf_t* buf) {
   buf->data = NULL;
 }
 
-int buf_append(buf_t* buf, const char* data, size_t n) {
+int buf_append(buf_t *buf, const char *data, size_t n) {
   if (buf == NULL || data == NULL) {
     return -1;
   }
-  char* src = buf_reserve(buf, n);
+  char *src = buf_reserve(buf, n);
   if (src == NULL) {
     return -1;
   }
@@ -47,27 +47,39 @@ int buf_append(buf_t* buf, const char* data, size_t n) {
   return 0;
 }
 
-char* buf_reserve(buf_t* buf, size_t n) {
+char *buf_reserve(buf_t *buf, size_t n) {
+  printf("in buf_reserve\n");
   if (buf->cap - buf->len >= n) {
+    printf("enough length ---\n");
     return buf->data + buf->len;
   }
   size_t cap = buf->cap;
   if (n > SIZE_MAX - buf->len) {
     errno = ENOMEM;
+    printf("asking for too much\n");
     return NULL;
   }
   while (cap - buf->len <= n) {
-    if (cap > SIZE_MAX/2) {
+    printf("in loop to allocate memory cap buf len %zu and n is %zu\n",
+           cap - buf->len, n);
+    if (cap > SIZE_MAX / 2) {
       errno = ENOMEM;
       return NULL;
     }
-    cap = 2*cap;
+    cap = 2 * cap;
   }
-  char* new_size = realloc(buf->data, cap);
+  printf("new capacity is --- %zu\n", cap);
+  char *new_size = realloc(buf->data, cap);
   if (new_size == NULL) {
+    printf("failed to allocate memory\n");
     return NULL;
   }
   buf->data = new_size;
   buf->cap = cap;
   return buf->data + buf->len;
+}
+
+void buf_reset(buf_t *buf, size_t cap) {
+  memset(buf, 0, sizeof(buf_t));
+  buf->cap = cap;
 }

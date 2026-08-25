@@ -1,16 +1,15 @@
+#include "buffer.h"
+#include "config.h"
+#include "http.h"
+#include "proxy.h"
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
 #include <unistd.h>
-#include <string.h>
-#include "backend.h"
-#include "proxy.h"
-#include "config.h"
-#include "buffer.h"
-
 
 int main() {
   int socket_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -54,39 +53,59 @@ int main() {
       fprintf(stderr, "Error: initialising request buffer");
       goto cleanup;
     }
-    int file_read = read(client_fd, req_buf.data, 4096);
-    if (file_read == -1) {
-      perror("error reading the request");
-      goto cleanup;
-    }
-    if (file_read == 0) {
-      goto cleanup;
-    }
-    req_buf.len += file_read;
-    struct backend* chosen_backend;
-    backend_fd = select_backend(&cfg.backends, &chosen_backend);
-    if (backend_fd == -1) {
-      perror("getting valid backend");
-      proxy_send_bad_gateway(client_fd);
-      goto cleanup;
-    }
-    printf("chose backend port %d\n", chosen_backend->port);
-    int file_write = proxy_send_request(backend_fd, req_buf.data, file_read);
-    if (file_write == -1) {
-      perror("error writing the repsonse");
-      goto cleanup;
-    }
-    int bytes_read = proxy_stream_response(backend_fd, client_fd);
-    if (bytes_read == -1) {
-      perror("error reading response from backend");
-      goto cleanup;
+    http_request_t http_req = {0};
+    size_t bytes_consumed = 0;
+    while (1) {
+      fprintf(stdout, "Reading request\n");
+      char *write_pos = buf_reserve(&req_buf, 4096);
+      fprintf(stdout, "buf reserve %zu\n", req_buf.cap - req_buf.len);
+      int file_read = read(client_fd, write_pos, req_buf.cap - req_buf.len);
+      if (file_read == -1) {
+        fprintf(stderr, "error reading the request\n");
+        perror("error reading the request\n");
+        goto cleanup;
+      }
+      fprintf(stdout, "no error reading the request\n");
+      if (file_read == 0) {
+        fprintf(stdout, "Client closed connection\n");
+        goto cleanup;
+      }
+      req_buf.len += file_read;
+      parse_status_t parse_status =
+          http_parse_request(&req_buf, &http_req, &bytes_consumed);
+      fprintf(stdout, "parse status %d\n", parse_status);
+      if (parse_status == PARSE_OK) {
+        int request_forwarded = proxy_select_backend_and_forward_request(
+            &cfg, &client_fd, &backend_fd, &req_buf, bytes_consumed);
+        if (request_forwarded == -1)
+          goto cleanup;
+        if (http_req.keep_alive == 0)
+          break;
+        buf_reset(&req_buf, 4096);
+        memset(&http_req, 0, sizeof(http_req));
+        bytes_consumed = 0;
+      }
+      if (parse_status == PARSE_ERROR) {
+        perror("bad request");
+        proxy_send_bad_request(client_fd);
+        goto cleanup;
+      }
+      if (parse_status == PARSE_NEED_DATA) {
+        fprintf(stdout, "Need more request data");
+        goto cleanup;
+      }
     }
   cleanup:
     printf("closing backend and clinet fd %d,%d\n", backend_fd, client_fd);
     if (backend_fd != -1) {
       close(backend_fd);
     }
-    buf_free(&req_buf);
-    close(client_fd);
+    if (http_req.keep_alive == 0) {
+      buf_free(&req_buf);
+      close(client_fd);
+    } else {
+      buf_free(&req_buf);
+      memset(&http_req, 0, sizeof(http_req));
+    }
   }
 }

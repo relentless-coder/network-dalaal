@@ -1,3 +1,6 @@
+#ifndef BUFFER_H
+#define BUFFER_H
+
 #include <stddef.h>
 
 typedef struct {
@@ -10,3 +13,6 @@ int buf_init(buf_t* buf, size_t cap);
 void buf_free(buf_t* buf);
 int buf_append(buf_t* buf,const char* data, size_t n);
 char* buf_reserve(buf_t* buf, size_t n);
+void buf_reset(buf_t* buf, size_t cap);
+
+#endif
