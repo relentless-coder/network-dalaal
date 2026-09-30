@@ -53,7 +53,7 @@ static void set_http_path(char *data, http_request_t *http_req, size_t len) {
 }
 
 static int parse_content_length_value(char *data, size_t value_start,
-                                      size_t line_end) {
+                                      size_t line_end, size_t *out) {
   size_t n = 0;
   for (size_t i = value_start; i < line_end; i++) {
     char c = data[i];
@@ -62,7 +62,31 @@ static int parse_content_length_value(char *data, size_t value_start,
     }
     n = n * 10 + (c - '0');
   }
-  return (int)n;
+  *out = n;
+  return 0;
+}
+
+static int parse_connection_value(char *data, size_t value_start,
+                                  size_t line_end, int *keep_alive) {
+  size_t i = value_start;
+  while (i < line_end) {
+    while (i < line_end && (data[i] == ' ' || data[i] == ','))
+      i++;
+    size_t token_start = i;
+    while (i < line_end && data[i] != ',')
+      i++;
+    size_t token_end = i;
+    while (token_end > token_start && data[token_end - 1] == ' ')
+      token_end--;
+    size_t token_len = token_end - token_start;
+    if (token_len == 5 && str_nocase_cmp(data + token_start, "close", 5) == 0) {
+      *keep_alive = 0;
+    } else if (token_len == 10 &&
+               str_nocase_cmp(data + token_start, "keep-alive", 10) == 0) {
+      *keep_alive = 1;
+    }
+  }
+  return PARSE_OK;
 }
 
 static size_t remove_space(char *data, size_t start) {
@@ -81,6 +105,17 @@ static int set_http_status(buf_t *buf, http_response_t *http_res, size_t len,
   return PARSE_OK;
 }
 
+static int parse_header_name_len(buf_t *buf, size_t *header_name_len,
+                                 size_t start, size_t line_end) {
+  for (size_t i = start; i < line_end; i++) {
+    if (buf->data[i] == ':') {
+      return 0;
+    } else {
+      *header_name_len = *header_name_len + 1;
+    }
+  }
+  return -1;
+}
 
 parse_status_t http_parse_request(buf_t *buf, http_request_t *http_req,
                                   size_t *bytes_consumed) {
@@ -141,28 +176,22 @@ parse_status_t http_parse_request(buf_t *buf, http_request_t *http_req,
       start += 2;
       break;
     }
-    int header_name_len = 0;
-    for (size_t i = start; i < line_end; i++) {
-      if (buf->data[i] == ':') {
-        if (str_nocase_cmp(buf->data + start, "Content-Length",
-                           header_name_len) == 0) {
-          i = remove_space(buf->data, i + 1);
-          int value = str_extract_int(buf->data, i + 1, line_end);
-          if (value == -1) {
-            return PARSE_ERROR;
-          }
-          http_req->content_length = value;
-
-        } else if (str_nocase_cmp(buf->data + start, "Connection",
-                                  header_name_len) == 0) {
-          i = remove_space(buf->data, i + 1);
-          if (buf->data[i] == 'c' || buf->data[i] == 'C') {
-            http_req->keep_alive = 0;
-          }
-        }
-      } else {
-        header_name_len++;
-      }
+    size_t header_name_len = 0;
+    if (parse_header_name_len(buf, &header_name_len, start, line_end) ==
+        PARSE_ERROR) {
+      return PARSE_ERROR;
+    };
+    start = remove_space(buf->data, start + 1);
+    if (str_nocase_cmp(buf->data + start, "content-length", header_name_len) ==
+        0) {
+      if (parse_content_length_value(buf->data, start, line_end,
+                                     &http_req->content_length) == PARSE_ERROR)
+        return PARSE_ERROR;
+    }
+    if (str_nocase_cmp(buf->data + start, "connection", header_name_len) == 0) {
+      if (parse_connection_value(buf->data, start, line_end,
+                                 &http_req->keep_alive) == PARSE_ERROR)
+        return PARSE_ERROR;
     }
     start = line_end + 2;
   }
@@ -216,4 +245,38 @@ parse_status_t http_parse_response(buf_t *buf, http_response_t *http_res,
     http_res->keep_alive = 1;
   }
   size_t start = i + 2;
+
+  while (1) {
+    size_t end_of_line = has_end_of_line(buf, start);
+    if (end_of_line == (size_t)-1) {
+      return PARSE_NEED_DATA;
+    }
+    if (end_of_line == start) {
+      start += 2;
+      break;
+    }
+
+    size_t header_name_len = 0;
+    if (parse_header_name_len(buf, &header_name_len, start, end_of_line) ==
+        PARSE_ERROR)
+      return PARSE_ERROR;
+    start = remove_space(buf->data, start + 1);
+    if (str_nocase_cmp(buf->data + start, "content-length", header_name_len) ==
+        0) {
+      if (parse_content_length_value(buf->data, start, end_of_line,
+                                     &http_res->content_length) ==
+          PARSE_ERROR) {
+        return PARSE_ERROR;
+      }
+    }
+    if (str_nocase_cmp(buf->data + start, "connection", header_name_len) == 0) {
+      if (parse_connection_value(buf->data, start, end_of_line,
+                                 &http_res->keep_alive) == PARSE_ERROR) {
+        return PARSE_ERROR;
+      }
+    }
+    start = end_of_line + 2;
+  }
+  *bytes_consumed = start;
+  return PARSE_OK;
 }
