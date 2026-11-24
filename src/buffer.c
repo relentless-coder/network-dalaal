@@ -83,3 +83,26 @@ void buf_reset(buf_t *buf, size_t cap) {
   memset(buf, 0, sizeof(buf_t));
   buf->cap = cap;
 }
+
+int buf_consume(buf_t *buf, size_t boundary) {
+  if (buf == NULL) {
+    return -1;
+  }
+  if ((int)boundary < 0 || boundary > buf->len) {
+    return -1;
+  }
+  if (buf->data == NULL) {
+    return -1;
+  }
+  if (boundary == buf->len) {
+    buf->len = 0;
+    return 0;
+  }
+  size_t len;
+  void *src;
+  len = buf->len - boundary;
+  src = buf->data + boundary;
+  memmove(buf->data, src, len);
+  buf->len = len;
+  return 0;
+}

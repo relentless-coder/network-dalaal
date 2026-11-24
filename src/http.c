@@ -181,7 +181,7 @@ parse_status_t http_parse_request(buf_t *buf, http_request_t *http_req,
         PARSE_ERROR) {
       return PARSE_ERROR;
     };
-    start = remove_space(buf->data, start + 1);
+    start = remove_space(buf->data, start + header_name_len + 2);
     if (str_nocase_cmp(buf->data + start, "content-length", header_name_len) ==
         0) {
       if (parse_content_length_value(buf->data, start, line_end,
@@ -244,7 +244,7 @@ parse_status_t http_parse_response(buf_t *buf, http_response_t *http_res,
   if (http_res->version == HTTP_1_1) {
     http_res->keep_alive = 1;
   }
-  size_t start = i + 2;
+  size_t start = end_of_line + 2;
 
   while (1) {
     size_t end_of_line = has_end_of_line(buf, start);
@@ -260,7 +260,7 @@ parse_status_t http_parse_response(buf_t *buf, http_response_t *http_res,
     if (parse_header_name_len(buf, &header_name_len, start, end_of_line) ==
         PARSE_ERROR)
       return PARSE_ERROR;
-    start = remove_space(buf->data, start + 1);
+    start = remove_space(buf->data, start + header_name_len + 2);
     if (str_nocase_cmp(buf->data + start, "content-length", header_name_len) ==
         0) {
       if (parse_content_length_value(buf->data, start, end_of_line,

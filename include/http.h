@@ -10,11 +10,7 @@ typedef enum {
   METHOD_UNKNOWN
 } http_method_t;
 
-typedef enum {
-  HTTP_1_0,
-  HTTP_1_1,
-  HTTP_VERSION_UNKNOWN
-} http_version_t;
+typedef enum { HTTP_1_0, HTTP_1_1, HTTP_VERSION_UNKNOWN } http_version_t;
 
 typedef enum {
   PARSE_OK = 0,
@@ -22,26 +18,31 @@ typedef enum {
   PARSE_ERROR = -1
 } parse_status_t;
 
+typedef enum { BODY_CONTENT_LENGTH = 0, BODY_UNTIL_CLOSE = 1 } body_framing_t;
 
 typedef struct {
   http_method_t method;
   http_version_t version;
-  char* path;
+  char *path;
   int path_len;
-  char* body;
+  char *body;
   size_t body_len;
   size_t content_length;
   int keep_alive;
-  buf_t* raw;
+  buf_t *raw;
+  body_framing_t body_framing;
 } http_request_t;
 
 typedef struct {
   http_version_t version;
   size_t content_length;
   int keep_alive;
-  buf_t* raw;
+  buf_t *raw;
   int status_code;
+  body_framing_t body_framing;
 } http_response_t;
 
-parse_status_t http_parse_request(buf_t* buf, http_request_t* http_req, size_t* bytes_consumed);
-parse_status_t http_parse_response(buf_t* buf, http_response_t* http_res, size_t* bytes_consumed);
+parse_status_t http_parse_request(buf_t *buf, http_request_t *http_req,
+                                  size_t *bytes_consumed);
+parse_status_t http_parse_response(buf_t *buf, http_response_t *http_res,
+                                   size_t *bytes_consumed);

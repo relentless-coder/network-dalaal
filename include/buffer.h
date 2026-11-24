@@ -14,5 +14,6 @@ void buf_free(buf_t* buf);
 int buf_append(buf_t* buf,const char* data, size_t n);
 char* buf_reserve(buf_t* buf, size_t n);
 void buf_reset(buf_t* buf, size_t cap);
+int buf_consume(buf_t* buf, size_t boundary);
 
 #endif
